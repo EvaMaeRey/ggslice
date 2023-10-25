@@ -57,37 +57,79 @@ mtcars %>%
 counter <- 1
 ```
 
-```{r}
-ggslice <- function(data, z, 
+```{r ggslice}
+slice_z <- function(data, z, 
+                    z_q_range = .5, # middle of the range
                     z_value = NULL, 
-                    tolerance = 1, 
-                    tol_value = 3){
+                    tolerance = .05, # plus or minus 5% of range
+                    tol_value = NULL){
   
-z_complete <- data %>% pull({{z}})  
+z_vector <- data |> pull({{z}})  
+z_range <- range(z_vector, na.rm = T)
+z_name <- data  |>  select({{z}}) |> names()
   
-if(is.null(z_value)){
-  
-    z_value <- range(z_complete, na.rm = T) %>% quantile(.5)
-    
-}
-  
-if(is.null(tol_value)){
-  
-  tol_value <- (z_complete[2]-z_complete[1])*tolerance
-  
-}
-  
+if(is.null(z_value)){     z_value <-  quantile(z_range, z_q_range)}
+if(is.null(tol_value)){ tol_value <- (z_range[2]-z_range[1])*tolerance}
+
+z_min <- z_value - tol_value
+z_max <- z_value + tol_value
   
 data %>% 
-  filter({{z}} < z_value + tol_value & {{z}} > z_value - tol_value) %>%
-  mutate(closeness = (tol_value - abs(z_value - {{z}}))/tol_value) %>%
-  ggplot() + 
-  geom_blank(data = data) + 
+  dplyr::filter({{z}} <= z_max & {{z}} >= z_min) |> 
+  dplyr::mutate(closeness = (tol_value - abs(z_value - {{z}}))/tol_value) 
+
+}
+
+
+#' Title
+#'
+#' @param data 
+#' @param z 
+#' @param z_q_range 
+#' @param z_value 
+#' @param tolerance 
+#' @param tol_value 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+ggslice <- function(data, z, 
+                    z_q_range = .5, # middle of the range
+                    z_value = NULL, 
+                    tolerance = .05, # plus or minus 5% of range
+                    tol_value = NULL){
+  
+z_vector <- data |> pull({{z}})  
+z_range <- range(z_vector, na.rm = T)
+z_name <- data  |>  select({{z}}) |> names()
+  
+if(is.null(z_value)){z_value <- z_range |> quantile(z_q_range)}
+if(is.null(tol_value)){tol_value <- (z_range[2]-z_range[1])*tolerance}
+
+z_min <- z_value - tol_value
+z_max <- z_value + tol_value
+  
+data %>% 
+  dplyr::filter({{z}} <= z_max & {{z}} >= z_min) |> 
+  dplyr::mutate(closeness = (tol_value - abs(z_value - {{z}}))/tol_value)  ->
+sliced
+  
+sliced |>
+  ggplot2::ggplot() + 
+  ggplot2::geom_blank(data = data) + 
+  ggplot2::labs(subtitle = paste0(z_name, " range = ", 
+                                  round(z_value, 2),"\u00B1",  
+                                  round(tol_value,2))) +
   # scale_color_viridis_c(limits = range(z_complete, na.rm = T)) + 
   NULL
   
 }
+```
 
+# Test it out
+
+```{r}
 ggslice(mtcars, z = drat) + 
   aes(x = wt, y = qsec) + 
   geom_point(aes(alpha = closeness, color = drat)) +
@@ -95,34 +137,60 @@ ggslice(mtcars, z = drat) +
   scale_alpha(limits = c(0, 1)) +
   geom_blank(data = mtcars) 
 
-
-
-
-
+ggslice(mtcars, z = drat, z_q_range = .6) + 
+  aes(x = wt, y = qsec) + 
+  geom_point(aes(alpha = closeness, color = drat)) +
+  # labs(title = paste0("z = ", z,"; tolerance = ",  tolerance)) +
+  scale_alpha(limits = c(0, 1)) +
+  geom_blank(data = mtcars) 
 ```
 
 
-```{r cars}
+```{r cars, fig.show='hold', out.width="33%"}
 library(tidyverse)
 df <- tibble(x = rnorm(1000)) |>
   mutate(y = x + rnorm(1000) , z = .2*x + .3*y + rnorm(1000), 
                  ind = sample(0:1, 1000, replace = T, prob = c(.1, .9)))
 
-
-
 ggslice(df, z = z) + 
   aes(x = x, y = y) + 
   geom_point(aes(alpha = closeness, color = ind)) +
-  # labs(title = paste0("z = ", z,"; tolerance = ",  tolerance)) +
-  scale_alpha(limits = c(0, 1))
+  scale_alpha(limits = c(0, 1)) + 
+  geom_smooth(method = lm)
+
+
+ggslice(df, z = z, z_q_range = .6) + 
+  aes(x = x, y = y) + 
+  geom_point(aes(alpha = closeness, 
+                 color = ind)) +
+  scale_alpha(limits = c(0, 1)) + 
+  geom_smooth(method = lm)
+
+ggslice(df, z = z, z_q_range = .7) + 
+  aes(x = x, y = y) + 
+  geom_point(aes(alpha = closeness, color = ind)) +
+  scale_alpha(limits = c(0, 1)) + 
+  geom_smooth(method = lm)
 ```
 
-You'll still need to render `README.Rmd` regularly, to keep `README.md` up-to-date. `devtools::build_readme()` is handy for this. You could also use GitHub Actions to re-render `README.Rmd` every time you push. An example workflow can be found here: <https://github.com/r-lib/actions/tree/v1/examples>.
 
-You can also embed plots, for example:
+```{r}
+# last_plot_new_slice()
 
-```{r pressure, echo = FALSE}
-plot(pressure)
+last_plot() %+% slice_z(df, z = z)
+
+
 ```
 
-In that case, don't forget to commit and push the resulting figure files, so they display on GitHub and CRAN.
+
+```{r}
+readme2pkg::chunk_to_r("ggslice")
+```
+
+
+```{r, eval = F}
+devtools::check()
+usethis::use_package("ggplot2")
+usethis::use_package("dplyr")
+devtools::build()
+```
